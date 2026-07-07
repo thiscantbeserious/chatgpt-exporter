@@ -29,7 +29,7 @@ npm run build
 
 Copy the contents of `dist/bookmarklet.txt` into a new bookmark's URL field, then click the bookmark while on chatgpt.com. (Pasting `javascript:` URLs into the address bar is blocked by browsers — it must be a bookmark click.)
 
-Use `node scripts/make-bookmarklet.mjs --no-minify` to build an unminified bookmarklet for debugging.
+Use `npm run build:debug` to build an unminified bookmarklet for debugging.
 
 ## Output
 

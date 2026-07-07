@@ -6,6 +6,7 @@
   "private": true,
   "scripts": {
     "build": "node scripts/make-bookmarklet.mjs",
+    "build:debug": "node scripts/make-bookmarklet.mjs --no-minify",
     "test": "node test/exporter.test.mjs src/export-chatgpt.js"
   },
   "devDependencies": {
