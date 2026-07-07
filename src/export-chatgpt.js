@@ -202,14 +202,24 @@
   // ── Get token ───────────────────────────────────────────────────────
 
   ui.set("Getting session token...");
-  let token;
+  let token, accountId;
   try {
     const session = await fetch("/api/auth/session").then((r) => r.json());
     token = session.accessToken;
     if (!token) throw new Error("No accessToken in session");
+    accountId = session.user?.id || "default";
   } catch (e) {
     ui.error("Failed to get session token. Are you logged in?");
     return;
+  }
+
+  // Account badge, bottom left above the taskbar: shows which account this
+  // run (and its cache) is bound to.
+  {
+    const badge = document.createElement("div");
+    badge.style.cssText = "position:fixed;left:12px;bottom:56px;z-index:100000;background:#0f172a;border:1px solid #334155;border-radius:8px;padding:5px 10px;font-family:ui-monospace,Menlo,monospace;font-size:11px;color:#64748b";
+    badge.textContent = `account: ${accountId}`;
+    overlay.appendChild(badge);
   }
 
   // ── API helper ──────────────────────────────────────────────────────
@@ -463,11 +473,15 @@
   // ── IndexedDB cache ─────────────────────────────────────────────────
   // Conversations AND downloaded files persist across runs/reloads, so a
   // restart spends zero rate-limit quota on anything already fetched.
+  // One DB per account: cached conversations from account A must never leak
+  // into an export of account B in the same browser profile.
   const idb = await new Promise((resolve) => {
-    const req = indexedDB.open("chatgpt-exporter-cache", 1);
+    const req = indexedDB.open(`chatgpt-exporter-cache-${accountId}`, 2);
     req.onupgradeneeded = () => {
-      req.result.createObjectStore("convos");
-      req.result.createObjectStore("files");
+      const db = req.result;
+      if (!db.objectStoreNames.contains("convos")) db.createObjectStore("convos");
+      if (!db.objectStoreNames.contains("files")) db.createObjectStore("files");
+      if (!db.objectStoreNames.contains("meta")) db.createObjectStore("meta");
     };
     req.onsuccess = () => resolve(req.result);
     req.onerror = () => { ui.log("IndexedDB unavailable, running without cache"); resolve(null); };
@@ -490,7 +504,7 @@
   overlay.querySelector("#cge-clearcache").addEventListener("click", async () => {
     if (!confirm("Clear the exporter cache and re-download everything from scratch?")) return;
     if (!idb) return ui.log("No cache to clear (IndexedDB unavailable)");
-    await Promise.all(["convos", "files"].map((s) => new Promise((resolve) => {
+    await Promise.all(["convos", "files", "meta"].map((s) => new Promise((resolve) => {
       const tx = idb.transaction(s, "readwrite");
       tx.objectStore(s).clear();
       tx.oncomplete = tx.onerror = () => resolve();
@@ -637,27 +651,37 @@
   ui.set("Fetching conversation list...");
   let conversations = [];
   const seenIds = new Set();
-  try {
-    // The list endpoint excludes archived chats by default; fetch both.
-    for (const archived of [false, true]) {
-      let offset = 0;
-      while (true) {
-        const data = await apiGet(`conversations?offset=${offset}&limit=${PAGE_SIZE}&is_archived=${archived}`);
-        const items = data.items || [];
-        if (!items.length) break;
-        for (const it of items) {
-          if (!seenIds.has(it.id)) { seenIds.add(it.id); conversations.push(it); }
+  // Reuse a recent list snapshot (<24h) so a reload starts from cache within
+  // seconds instead of re-paging the whole list through the throttle. New or
+  // renamed chats are picked up when the snapshot expires or the cache is cleared.
+  const snapshot = await cacheGet("meta", "conversationList");
+  if (snapshot && Date.now() - snapshot.at < 86400000) {
+    conversations = snapshot.items;
+    ui.log(`List snapshot from cache (${conversations.length} conversations, ${Math.round((Date.now() - snapshot.at) / 60000)}min old)`);
+  } else {
+    try {
+      // The list endpoint excludes archived chats by default; fetch both.
+      for (const archived of [false, true]) {
+        let offset = 0;
+        while (true) {
+          const data = await apiGet(`conversations?offset=${offset}&limit=${PAGE_SIZE}&is_archived=${archived}`);
+          const items = data.items || [];
+          if (!items.length) break;
+          for (const it of items) {
+            if (!seenIds.has(it.id)) { seenIds.add(it.id); conversations.push(it); }
+          }
+          const total = data.total || 0;
+          ui.set(`Fetching ${archived ? "archived" : "active"} list... ${conversations.length} total`);
+          offset += PAGE_SIZE;
+          if (offset >= total) break;
         }
-        const total = data.total || 0;
-        ui.set(`Fetching ${archived ? "archived" : "active"} list... ${conversations.length} total`);
-        offset += PAGE_SIZE;
-        if (offset >= total) break;
+        ui.log(`${archived ? "Archived" : "Active"} list done: ${conversations.length} conversations so far`);
       }
-      ui.log(`${archived ? "Archived" : "Active"} list done: ${conversations.length} conversations so far`);
+      await cachePut("meta", "conversationList", { at: Date.now(), items: conversations });
+    } catch (e) {
+      ui.error(`Failed to fetch conversations: ${e.message}`);
+      return;
     }
-  } catch (e) {
-    ui.error(`Failed to fetch conversations: ${e.message}`);
-    return;
   }
 
   if (!conversations.length) {

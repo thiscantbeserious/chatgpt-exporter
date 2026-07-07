@@ -41,12 +41,13 @@ globalThis.document = {
 };
 globalThis.window = { innerHeight: 900 };
 // in-memory IndexedDB stub: same API shape, backed by Maps
-const idbStores = { convos: new Map(), files: new Map() };
+const idbStores = { convos: new Map(), files: new Map(), meta: new Map() };
 function idbReq(result) { const r = { result }; setImmediate(() => r.onsuccess?.()); return r; }
 globalThis.indexedDB = {
   open: () => {
     const r = {
       result: {
+        objectStoreNames: { contains: (s) => s in idbStores },
         createObjectStore: () => {},
         transaction: (store) => ({
           objectStore: (s = store) => ({
