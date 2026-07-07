@@ -43,6 +43,8 @@ jobs:
       contents: write
     steps:
       - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0 # changelog needs tags and full history
       - uses: actions/setup-node@v5
         with:
           node-version: 24
@@ -56,6 +58,24 @@ jobs:
             echo "new=true" >> "$GITHUB_OUTPUT"
             echo "version=$VERSION" >> "$GITHUB_OUTPUT"
           fi
+      - name: Update CHANGELOG.md
+        if: steps.version.outputs.new == 'true'
+        run: |
+          V="v${{ steps.version.outputs.version }}"
+          PREV=$(git describe --tags --abbrev=0 2>/dev/null || echo "")
+          RANGE=$([ -n "$PREV" ] && echo "$PREV..HEAD" || echo "HEAD")
+          {
+            echo "## $V ($(date +%Y-%m-%d))"
+            echo
+            git log --no-merges --pretty='- %s' $RANGE | grep -v '^- Co-Authored' || true
+            echo
+            [ -f CHANGELOG.md ] && cat CHANGELOG.md
+          } > CHANGELOG.new && mv CHANGELOG.new CHANGELOG.md
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add CHANGELOG.md
+          git commit -m "chore: update CHANGELOG for $V [skip ci]"
+          git push
       - name: Build
         if: steps.version.outputs.new == 'true'
         run: |

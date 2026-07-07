@@ -171,7 +171,8 @@ assert.ok(integrity.includes("No errors detected"), "zip integrity OK");
 // Markdown content sane
 const md = execSync("cat '/tmp/test-export-out/markdown/Conversation 2 _'*.md").toString();
 assert.ok(md.includes("Answer 2 with **markdown**"), "markdown content present");
-assert.ok(md.includes("doc.pdf"), "attachment link present in md");
+// file links are predetermined in pass 1 (index-prefixed sanitized ref name)
+assert.ok(/\]\(\.\.\/files\/.+doc/.test(md), "attachment link present in md");
 
 // HTML pass ran over all successes and escaped titles
 const html = execSync("cat '/tmp/test-export-out/html/Conversation 7 _'*.html").toString();

@@ -723,12 +723,18 @@
       // and fetched in a separate phase AFTER all conversations are secured.
       const fileRefs = extractFileReferences(convo);
       totalFiles += fileRefs.length;
+      // File paths are decided NOW (index prefix guarantees uniqueness), so
+      // markdown and HTML can link them before the downloads happen. A file
+      // that later 404s leaves a dead link; the alternative was regenerating
+      // everything after the file pass.
+      const fileMap = {};
+      fileRefs.forEach((ref, n) => {
+        ref.zipName = `${n}_${sanitize(ref.filename || "file")}`;
+        fileMap[ref.fileId] = `../files/${fname}/${ref.zipName}`;
+      });
       zipEntries.push({ path: `json/${fname}.json`, data: jsonStr });
-      // Markdown lands with the text pass too, so a partial save is readable;
-      // convos with files get their markdown regenerated with links in pass 3.
-      const mdEntry = { path: `markdown/${fname}.md`, data: toMarkdown(convo, {}) };
-      zipEntries.push(mdEntry);
-      downloaded[i] = { fname, title, convo, fileMap: {}, fileRefs, mdEntry };
+      zipEntries.push({ path: `markdown/${fname}.md`, data: toMarkdown(convo, fileMap) });
+      downloaded[i] = { fname, title, convo, fileMap, fileRefs };
       ui.workerLog(workerId, `done #${i + 1}${fileRefs.length ? ` (${fileRefs.length} files queued)` : ""}`);
     } catch (e) {
       failed++;
@@ -776,7 +782,6 @@
   let filesDone = 0;
   if (fileQueue.length) {
     ui.log(`Starting file pass: ${fileQueue.length} files across ${succeededConvos.filter((d) => d.fileRefs.length).length} conversations`);
-    const usedNamesByConvo = new Map();
     let nextFile = 0;
     await Promise.all(
       Array.from({ length: Math.min(CONCURRENCY, fileQueue.length) }, async (_, w) => {
@@ -784,13 +789,12 @@
           const { d, ref } = fileQueue[nextFile++];
           ui.worker(w, `file ${filesDone + 1}/${fileQueue.length}`, "green");
           try {
-            const { filename: dlName, data } = await downloadFile(ref.fileId, ref.filename);
-            if (!usedNamesByConvo.has(d.fname)) usedNamesByConvo.set(d.fname, new Set());
-            const actualName = deduplicateFilename(dlName || ref.filename, usedNamesByConvo.get(d.fname));
-            zipEntries.push({ path: `files/${d.fname}/${actualName}`, data });
-            d.fileMap[ref.fileId] = `../files/${d.fname}/${actualName}`;
+            const { data } = await downloadFile(ref.fileId, ref.filename);
+            // stored under the name pass 1 already linked in markdown/HTML
+            zipEntries.push({ path: `files/${d.fname}/${ref.zipName}`, data });
           } catch (e) {
             failedFiles++;
+            delete d.fileMap[ref.fileId]; // dead link -> render as plain [image]/no link in HTML pass
             ui.workerLog(w, `file ${ref.fileId} failed (${e.message}) in "${d.title.slice(0, 40)}"`);
           }
           filesDone++;
@@ -808,9 +812,6 @@
   const allConvos = succeededConvos.map((d) => ({ fname: d.fname, title: d.title }));
 
   for (const d of succeededConvos) {
-    // regenerate markdown in place with the real file links (entry was
-    // already pushed in pass 1 so partial saves stay readable)
-    if (Object.keys(d.fileMap).length) d.mdEntry.data = toMarkdown(d.convo, d.fileMap);
     const htmlStr = toHtml(d.convo, d.fileMap, allConvos, d.fname);
     zipEntries.push({ path: `html/${d.fname}.html`, data: htmlStr });
   }
