@@ -301,7 +301,9 @@
         if (Date.now() >= getPause()) {
           localStorage.setItem(LS_OK, 0);
           const strikes = recordStrike();
-          const d = Math.min(getDelay() + 2000, 30000); // +2s per event
+          // Multiplicative climb: additive steps need many strike-pause cycles
+          // to reach a low tolerated rate; ×1.5 discovers it in 2-3 strikes.
+          const d = Math.min(Math.max(getDelay() * 1.5, getDelay() + 2000), 60000);
           setDelay(d);
           const retryAfterRaw = resp.headers.get("Retry-After");
           const retryAfter = parseInt(retryAfterRaw) * 1000;
