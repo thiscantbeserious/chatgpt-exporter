@@ -783,11 +783,23 @@
   // Reuse a recent list snapshot (<24h) so a reload starts from cache within
   // seconds instead of re-paging the whole list through the throttle. New or
   // renamed chats are picked up when the snapshot expires or the cache is cleared.
+  // A snapshot is only trustworthy if it covers at least as much as what we
+  // have already downloaded: a list fetched while the server was flaky can be
+  // silently truncated, and pinning restarts to it would orphan the rest.
+  const cachedConvoCount = await new Promise((resolve) => {
+    if (!idb) return resolve(0);
+    const req = idb.transaction("convos").objectStore("convos").count();
+    req.onsuccess = () => resolve(req.result);
+    req.onerror = () => resolve(0);
+  });
   const snapshot = await cacheGet("meta", "conversationList");
-  if (snapshot && Date.now() - snapshot.at < 86400000) {
+  if (snapshot && Date.now() - snapshot.at < 86400000 && snapshot.items.length >= cachedConvoCount) {
     conversations = snapshot.items;
     ui.log(`List snapshot from cache (${conversations.length} conversations, ${Math.round((Date.now() - snapshot.at) / 60000)}min old)`);
   } else {
+    if (snapshot && snapshot.items.length < cachedConvoCount) {
+      ui.log(`Snapshot (${snapshot.items.length}) smaller than cached conversations (${cachedConvoCount}), truncated list suspected, refetching`);
+    }
     try {
       // The list endpoint excludes archived chats by default; fetch both.
       for (const archived of [false, true]) {
@@ -799,14 +811,21 @@
           for (const it of items) {
             if (!seenIds.has(it.id)) { seenIds.add(it.id); conversations.push(it); }
           }
-          const total = data.total || 0;
           ui.set(`Fetching ${archived ? "archived" : "active"} list... ${conversations.length} total`);
           offset += PAGE_SIZE;
-          if (offset >= total) break;
+          // Trust total only to stop EARLY when present; a missing/zero total
+          // must keep paging until an empty page, not stop after page one.
+          if (data.total && offset >= data.total) break;
+          if (items.length < PAGE_SIZE) break; // short page = end of list
         }
         ui.log(`${archived ? "Archived" : "Active"} list done: ${conversations.length} conversations so far`);
       }
-      await cachePut("meta", "conversationList", { at: Date.now(), items: conversations });
+      // Never cache a list that shrank drastically below what we know exists.
+      if (conversations.length >= cachedConvoCount * 0.5) {
+        await cachePut("meta", "conversationList", { at: Date.now(), items: conversations });
+      } else {
+        ui.log(`Fetched list (${conversations.length}) suspiciously small vs cache (${cachedConvoCount}), NOT caching it`);
+      }
     } catch (e) {
       ui.error(`Failed to fetch conversations: ${e.message}`);
       return;
