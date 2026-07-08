@@ -842,12 +842,14 @@
   // chats and freshness hints. Export the union, so a flaky list can never
   // shrink the export below what we have already proven exists.
   if (idb) {
+    const cachedIds = new Set();
     const cachedEntries = await new Promise((resolve) => {
       const out = [];
       const req = idb.transaction("convos").objectStore("convos").openCursor();
       req.onsuccess = () => {
         const cur = req.result;
         if (!cur) return resolve(out);
+        cachedIds.add(cur.key);
         const c = cur.value?.convo;
         out.push({ id: cur.key, title: c?.title || "Untitled", update_time: null });
         cur.continue();
@@ -859,6 +861,12 @@
       if (!seenIds.has(e.id)) { seenIds.add(e.id); conversations.push(e); fromCache++; }
     }
     if (fromCache) ui.log(`Merged ${fromCache} conversations known only from cache (list endpoint returned ${conversations.length - fromCache})`);
+    // Cache-first ordering: cached conversations replay instantly and fill
+    // the partial save within seconds; slow network fetches (and 412-stale
+    // stragglers) go last so they cannot block a thousand instant hits.
+    const before = conversations.length;
+    conversations.sort((a, b) => cachedIds.has(b.id) - cachedIds.has(a.id));
+    ui.log(`Processing order: ${cachedIds.size ? `${conversations.filter((c) => cachedIds.has(c.id)).length} cached first, ` : ""}${before - cachedIds.size} uncached last`);
   }
 
   if (!conversations.length) {
