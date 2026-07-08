@@ -48,11 +48,15 @@ jobs:
       - uses: actions/setup-node@v5
         with:
           node-version: 24
-      - name: Check if version is new
+      - name: Check if version needs a release
         id: version
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           VERSION=$(node -p "require('./package.json').version")
-          if git ls-remote --tags origin "v$VERSION" | grep -q .; then
+          # Gate on the RELEASE, not the tag: npm version pushes the tag
+          # before CI runs, so a tag check always concludes "nothing to do".
+          if gh release view "v$VERSION" >/dev/null 2>&1; then
             echo "new=false" >> "$GITHUB_OUTPUT"
           else
             echo "new=true" >> "$GITHUB_OUTPUT"
@@ -62,7 +66,9 @@ jobs:
         if: steps.version.outputs.new == 'true'
         run: |
           V="v${{ steps.version.outputs.version }}"
-          PREV=$(git describe --tags --abbrev=0 2>/dev/null || echo "")
+          # previous tag EXCLUDING the current version's own tag (npm version
+          # already pushed it pointing at HEAD)
+          PREV=$(git tag --sort=-v:refname | grep -v "^$V$" | head -1 || echo "")
           RANGE=$([ -n "$PREV" ] && echo "$PREV..HEAD" || echo "HEAD")
           {
             echo "## $V ($(date +%Y-%m-%d))"
@@ -90,8 +96,11 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           V="v${{ steps.version.outputs.version }}"
-          git tag "$V"
-          git push origin "$V"
+          # tag may already exist (npm version pushes it); create only if missing
+          if ! git ls-remote --tags origin "$V" | grep -q .; then
+            git tag "$V"
+            git push origin "$V"
+          fi
           gh release create "$V" \
             --title "$V" \
             --generate-notes \
