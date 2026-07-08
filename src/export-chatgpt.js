@@ -836,6 +836,31 @@
     }
   }
 
+  // The list endpoint is unreliable under pressure (observed: reported total
+  // 101 and an early empty page while 1086 conversations sat in the cache).
+  // The cache is ground truth for what EXISTS; the fetched list only adds new
+  // chats and freshness hints. Export the union, so a flaky list can never
+  // shrink the export below what we have already proven exists.
+  if (idb) {
+    const cachedEntries = await new Promise((resolve) => {
+      const out = [];
+      const req = idb.transaction("convos").objectStore("convos").openCursor();
+      req.onsuccess = () => {
+        const cur = req.result;
+        if (!cur) return resolve(out);
+        const c = cur.value?.convo;
+        out.push({ id: cur.key, title: c?.title || "Untitled", update_time: null });
+        cur.continue();
+      };
+      req.onerror = () => resolve(out);
+    });
+    let fromCache = 0;
+    for (const e of cachedEntries) {
+      if (!seenIds.has(e.id)) { seenIds.add(e.id); conversations.push(e); fromCache++; }
+    }
+    if (fromCache) ui.log(`Merged ${fromCache} conversations known only from cache (list endpoint returned ${conversations.length - fromCache})`);
+  }
+
   if (!conversations.length) {
     ui.done("No conversations found.");
     return;

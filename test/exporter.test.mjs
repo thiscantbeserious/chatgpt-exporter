@@ -66,6 +66,19 @@ globalThis.indexedDB = {
             put: (v, k) => idbStores[s].set(k, v),
             clear: () => idbStores[s].clear(),
             count: () => idbReq(idbStores[s].size),
+            openCursor: () => {
+              const entries = [...idbStores[s].entries()];
+              let i = 0;
+              const r = {};
+              const step = () => {
+                r.result = i < entries.length
+                  ? { key: entries[i][0], value: entries[i][1], continue: () => { i++; setImmediate(step); } }
+                  : null;
+                r.onsuccess?.();
+              };
+              setImmediate(step);
+              return r;
+            },
           }),
           set oncomplete(f) { setImmediate(f); },
           onerror: null,
