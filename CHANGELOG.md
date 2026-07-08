@@ -1,7 +1,3 @@
-## Unreleased
-
-- Blur page behind overlay, fix CHANGELOG step on first run
-
 ## v1.0.4 (2026-07-08)
 
 - Replace hourglass with countdown ring, badge clears the bar, chips shrink on small screens

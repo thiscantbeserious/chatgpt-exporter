@@ -75,8 +75,7 @@ jobs:
             echo
             git log --no-merges --pretty='- %s' $RANGE | grep -v '^- Co-Authored' || true
             echo
-            # drop a stale Unreleased section; its commits are in the new version
-            sed '/^## Unreleased/,/^## v/{/^## v/!d;}' CHANGELOG.md 2>/dev/null || true
+            cat CHANGELOG.md 2>/dev/null || true
           } > CHANGELOG.new
           mv CHANGELOG.new CHANGELOG.md
           git config user.name "github-actions[bot]"
