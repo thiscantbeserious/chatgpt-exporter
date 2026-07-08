@@ -4,7 +4,7 @@
 // ─────────────────────────────────────────────────────────────────────
 
 (async () => {
-  const VERSION = "v1.0.5";
+  const VERSION = "v1.0.6";
   const API = "/backend-api";
   const PAGE_SIZE = 100;
   const DELAY = 1200; // base ms between requests, account-wide, human-ish pace; the site shares this quota

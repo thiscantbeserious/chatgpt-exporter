@@ -1,4 +1,4 @@
-# ChatGPT Exporter v1.0.5
+# ChatGPT Exporter v1.0.6
 
 [![CI](https://github.com/thiscantbeserious/chatgpt-exporter/actions/workflows/ci.yml/badge.svg)](https://github.com/thiscantbeserious/chatgpt-exporter/actions/workflows/ci.yml)
 [![Co-authored with Claude Fable 5](https://img.shields.io/badge/co--authored%20with-Claude%20Fable%205-c15f3c)](https://www.anthropic.com/news/claude-fable-5-mythos-5)
