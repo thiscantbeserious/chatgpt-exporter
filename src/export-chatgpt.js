@@ -1060,6 +1060,12 @@
             const resp = await origFetch(input, init);
             try {
               const url = typeof input === "string" ? input : input.url;
+              // the iframe's app shares the account quota: report its 429s
+              // into the shared throttle state so the workers pause too
+              if (resp.status === 429 && Date.now() >= getPause()) {
+                localStorage.setItem(LS_PAUSE, Date.now() + getMinPause());
+                ui.log("Browser-assist: iframe hit 429, shared pause engaged");
+              }
               if (url && url.includes(`/backend-api/conversation/${cid}`) && !url.includes("/textdocs") && resp.ok) {
                 resp.clone().json().then((j) => { if (j && j.mapping) finish(j); }).catch(() => {});
               }
@@ -1087,6 +1093,11 @@
         const c = conversations[i];
         ui.worker(0, `assist ${n + 1}/${assistIdx.length}`, "yellow");
         ui.set(`Browser-assist: ${n + 1} of ${assistIdx.length}`, null, c.title || "Untitled");
+        // An iframe load fires several backend-api requests (session, models,
+        // the conversation), all against the shared account quota. Reserve
+        // multiple pacer slots so the assist pass obeys the same throttle and
+        // pause windows as the workers.
+        for (let s = 0; s < 3; s++) await throttle();
         const convo = await harvestViaIframe(c.id);
         if (convo) {
           await cachePut("convos", c.id, { convo, cachedUpdateTime: Date.now() });
@@ -1106,7 +1117,6 @@
         } else {
           ui.workerLog(0, `assist failed for "${(c.title || "Untitled").slice(0, 50)}"`);
         }
-        await sleep(1500); // gentle pacing, the app's own fetches count against the quota too
       }
       ui.log(`Browser-assist done: ${assistRecovered}/${assistIdx.length} recovered`);
       ui.worker(0, "idle", "gray");
