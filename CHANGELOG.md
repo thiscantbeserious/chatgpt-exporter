@@ -1,3 +1,15 @@
+## v1.0.5 (2026-07-08)
+
+- v1.0.5
+- Refresh expired session token on 401/403/412 instead of failing conversations
+- Add MIT LICENSE, license field in package.json, README section
+- README screenshot: v1.0.4 UI with blur, countdown ring, tuner, taskbar
+- CHANGELOG contains tagged releases only, drop Unreleased section
+- Release CI drops the stale Unreleased section when prepending a version
+- Regenerate CHANGELOG with full per-version history back to v1.0.0
+- chore: update CHANGELOG for v1.0.4 [skip ci]
+- Blur page behind overlay, fix CHANGELOG step on first run
+
 ## v1.0.4 (2026-07-08)
 
 - Replace hourglass with countdown ring, badge clears the bar, chips shrink on small screens
