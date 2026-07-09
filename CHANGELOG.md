@@ -1,3 +1,24 @@
+## v1.0.8 (2026-07-09)
+
+- v1.0.8
+- Completion summary as a clean stat list instead of a run-on sentence
+- Show filenames in file-pass progress, skip un-downloadable #p_N page pointers
+- Drop laggy backdrop blur, assist double-try, phase-aware progress bar and ETA
+- Test harness: stubs Node 24 lacks (indexedDB.databases, sessionStorage, storage iteration)
+- Test harness: progress diagnostics while waiting for the ZIP
+- Test harness: cap injected-429 pause via account-scoped key, raise poll ceiling
+- Test harness: window.addEventListener stub
+- Reload forensics: heartbeat proves when a run died to a page reload
+- Test harness: window/history stubs for SPA capture
+- Browser-assist via SPA navigation in the main window, no iframe
+- Fail fast on stale 412s, route them directly to browser-assist
+- Browser-assist obeys the shared throttle
+- Browser-assist pass: harvest stale conversations through the app itself
+- Legacy cache migration, stale-conversations report in the ZIP
+- Send all discoverable ois1 tokens in x-oai-is-pending-updates
+- Send x-oai-is-pending-updates header to unstick 412 conversations
+- chore: update CHANGELOG for v1.0.7 [skip ci]
+
 ## v1.0.7 (2026-07-08)
 
 - v1.0.7
