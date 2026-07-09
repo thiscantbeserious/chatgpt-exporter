@@ -1054,54 +1054,59 @@
   // which resolves them via in-memory state we cannot replicate. So let the
   // app do it: load each chat in a hidden same-origin iframe with a patched
   // fetch, and capture the conversation JSON as the app receives it.
-  async function harvestViaIframe(cid, timeoutMs = 30000) {
-    return new Promise((resolve) => {
-      const frame = document.createElement("iframe");
-      frame.style.cssText = "position:fixed;width:0;height:0;border:0;visibility:hidden";
-      let settled = false;
-      const finish = (val) => {
-        if (settled) return;
-        settled = true;
-        frame.remove();
-        resolve(val);
-      };
-      setTimeout(() => finish(null), timeoutMs);
-      frame.addEventListener("load", () => {
-        try {
-          const win = frame.contentWindow;
-          const origFetch = win.fetch.bind(win);
-          win.fetch = async (input, init) => {
-            const resp = await origFetch(input, init);
-            try {
-              const url = typeof input === "string" ? input : input.url;
-              // the iframe's app shares the account quota: report its 429s
-              // into the shared throttle state so the workers pause too
-              if (resp.status === 429 && Date.now() >= getPause()) {
-                localStorage.setItem(LS_PAUSE, Date.now() + getMinPause());
-                ui.log("Browser-assist: iframe hit 429, shared pause engaged");
-              }
-              if (url && url.includes(`/backend-api/conversation/${cid}`) && !url.includes("/textdocs") && resp.ok) {
-                resp.clone().json().then((j) => { if (j && j.mapping) finish(j); }).catch(() => {});
-              }
-            } catch {}
-            return resp;
-          };
-        } catch (e) {
-          finish(null);
+  // Main-window capture: chatgpt.com is an SPA, so navigating to /c/<id>
+  // swaps the view client-side without unloading our script. Patch fetch in
+  // the main window (guaranteed before any request), drive the router to the
+  // conversation, and capture the JSON the app receives via its own working
+  // in-memory handshake. No iframe: frame-ancestors CSP and load-order races
+  // killed that approach in the field.
+  const convoCapture = { want: null, resolve: null };
+  {
+    const origFetch = window.fetch.bind(window);
+    window.fetch = async (input, init) => {
+      const resp = await origFetch(input, init);
+      try {
+        const url = typeof input === "string" ? input : input?.url;
+        if (convoCapture.want && url && url.includes(`/backend-api/conversation/${convoCapture.want}`) && !url.includes("/textdocs") && resp.ok) {
+          resp.clone().json().then((j) => {
+            if (j && j.mapping && convoCapture.resolve) convoCapture.resolve(j);
+          }).catch(() => {});
         }
-      });
-      // load the shell first so our fetch patch is in place before the app
-      // navigates to the conversation and fires its request
-      frame.src = `/c/${cid}`;
-      document.body.appendChild(frame);
+      } catch {}
+      return resp;
+    };
+  }
+
+  async function harvestViaNavigation(cid, timeoutMs = 25000) {
+    const returnTo = location.pathname + location.search;
+    const captured = new Promise((resolve) => {
+      convoCapture.want = cid;
+      convoCapture.resolve = resolve;
+      setTimeout(() => resolve(null), timeoutMs);
     });
+    // drive the SPA router: a real sidebar link click uses the app's own
+    // navigation (most reliable); fall back to pushState + popstate
+    const link = document.querySelector(`a[href="/c/${cid}"], a[href*="${cid}"]`);
+    if (link) {
+      link.click();
+    } else {
+      history.pushState({}, "", `/c/${cid}`);
+      window.dispatchEvent(new PopStateEvent("popstate", { state: {} }));
+    }
+    const convo = await captured;
+    convoCapture.want = null;
+    convoCapture.resolve = null;
+    // navigate back so the app does not sit on a conversation view
+    history.pushState({}, "", returnTo);
+    window.dispatchEvent(new PopStateEvent("popstate", { state: {} }));
+    return convo;
   }
 
   let assistRecovered = 0;
   {
     const assistIdx = [...downloaded.keys()].filter((i) => !downloaded[i]);
     if (assistIdx.length && assistIdx.length < total) {
-      ui.log(`Browser-assist: loading ${assistIdx.length} stale conversations through the app (hidden iframe)`);
+      ui.log(`Browser-assist: navigating the app to ${assistIdx.length} stale conversations (SPA capture)`);
       for (let n = 0; n < assistIdx.length; n++) {
         const i = assistIdx[n];
         const c = conversations[i];
@@ -1112,7 +1117,7 @@
         // multiple pacer slots so the assist pass obeys the same throttle and
         // pause windows as the workers.
         for (let s = 0; s < 3; s++) await throttle();
-        const convo = await harvestViaIframe(c.id);
+        const convo = await harvestViaNavigation(c.id);
         if (convo) {
           await cachePut("convos", c.id, { convo, cachedUpdateTime: Date.now() });
           const fname = `${sanitize(convo.title || c.title || "Untitled")}_${c.id.slice(0, 8)}`;
