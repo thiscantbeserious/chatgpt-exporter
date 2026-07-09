@@ -190,6 +190,18 @@
   ui.setChip("global", "LOG", "LOG", "gray");
   overlay.querySelector("#cge-version").textContent = VERSION;
   ui.log(`Exporter ${VERSION} started`);
+  // Reload forensics: a bookmarklet dies with the page; if the app (or the
+  // 412 "please reload" handler) reloads the tab mid-run, prove it in the log
+  // of the NEXT run instead of looking like a mysterious restart-from-zero.
+  {
+    const prev = localStorage.getItem("cge:alive");
+    if (prev) ui.log(`Previous run ended without finishing (last heartbeat ${new Date(Number(prev)).toTimeString().slice(0, 8)}), page was reloaded or closed mid-run`);
+    setInterval(() => localStorage.setItem("cge:alive", Date.now()), 2000);
+    window.addEventListener("beforeunload", () => {
+      // best effort: mark a clean explanation for the next run
+      localStorage.setItem("cge:alive", Date.now());
+    });
+  }
 
   // ── Pause countdown ring ────────────────────────────────────────────
   // Circular progress that empties over the real pause duration, with the
@@ -1242,6 +1254,7 @@
   if (failed) doneMsg += ` (${failed} failed)`;
   if (totalFiles) doneMsg += ` ${totalFiles - failedFiles}/${totalFiles} files downloaded.`;
   if (cacheHits || fileCacheHits) doneMsg += ` (${cacheHits} conversations + ${fileCacheHits} files from cache)`;
+  localStorage.removeItem("cge:alive");
   ui.done(doneMsg);
 
   // ── Markdown converter ──────────────────────────────────────────────
