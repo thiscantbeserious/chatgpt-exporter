@@ -170,11 +170,25 @@
     log(msg) {
       this.logTo("global", "LOG", msg);
     },
-    done(msg) {
+    done(msg, rows) {
       this.status.textContent = msg;
       this.bar.style.width = "100%";
       this.bar.style.background = "#22c55e";
-      this.detail.textContent = "You can close this overlay by clicking anywhere.";
+      if (rows && rows.length) {
+        // stat list: [label, value, ok?] per row
+        this.detail.style.whiteSpace = "normal";
+        this.detail.style.overflow = "visible";
+        this.detail.innerHTML =
+          `<div style="display:flex;flex-direction:column;gap:4px;margin:4px 0 10px">` +
+          rows.map(([label, value, ok]) =>
+            `<div style="display:flex;justify-content:space-between;gap:16px;font-size:13px">` +
+            `<span style="color:#94a3b8">${label}</span>` +
+            `<span style="color:${ok === false ? "#f59e0b" : "#e2e8f0"};font-variant-numeric:tabular-nums">${value}</span></div>`
+          ).join("") +
+          `</div><span style="color:#64748b;font-size:12px">Click anywhere to close.</span>`;
+      } else {
+        this.detail.textContent = "You can close this overlay by clicking anywhere.";
+      }
       overlay.querySelector("div").style.cursor = "pointer";
       overlay.addEventListener("click", () => overlay.remove());
     },
@@ -1291,12 +1305,13 @@
   URL.revokeObjectURL(a.href);
 
   const succeeded = total - failed;
-  let doneMsg = `Done! Exported ${succeeded}/${total} conversations.`;
-  if (failed) doneMsg += ` (${failed} failed)`;
-  if (totalFiles) doneMsg += ` ${totalFiles - failedFiles}/${totalFiles} files downloaded.`;
-  if (cacheHits || fileCacheHits) doneMsg += ` (${cacheHits} conversations + ${fileCacheHits} files from cache)`;
+  const rows = [["Conversations", `${succeeded} / ${total}`, failed === 0]];
+  if (totalFiles) rows.push(["Files", `${totalFiles - failedFiles} / ${totalFiles}`, failedFiles === 0]);
+  if (failed) rows.push(["Unavailable (see stale-conversations.md)", String(failed), false]);
+  if (failedFiles) rows.push(["Files expired server-side", String(failedFiles), false]);
+  if (cacheHits || fileCacheHits) rows.push(["Served from cache", `${cacheHits} conv, ${fileCacheHits} files`, true]);
   localStorage.removeItem("cge:alive");
-  ui.done(doneMsg);
+  ui.done("Export complete", rows);
 
   // ── Markdown converter ──────────────────────────────────────────────
 
