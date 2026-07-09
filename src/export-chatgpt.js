@@ -800,7 +800,10 @@
 
       if (msg.metadata?.attachments) {
         for (const att of msg.metadata.attachments) {
-          if (att.id && !seen.has(att.id)) {
+          // Skip per-page image sub-references (id like "<hash>#file_...#p_8.jpg"):
+          // they are not independently downloadable and the server 422s them.
+          // The parent file (plain file_/file- id) is referenced separately.
+          if (att.id && !att.id.includes("#p_") && !seen.has(att.id)) {
             seen.add(att.id);
             refs.push({ fileId: att.id, filename: att.name || "attachment", type: "attachment" });
           }
@@ -811,7 +814,7 @@
         for (const cit of msg.metadata.citations) {
           const fileId = cit.metadata?.file_id || cit.file_id;
           const title = cit.metadata?.title || cit.title || "citation";
-          if (fileId && !seen.has(fileId)) {
+          if (fileId && !fileId.includes("#p_") && !seen.has(fileId)) {
             seen.add(fileId);
             refs.push({ fileId, filename: title, type: "citation" });
           }
@@ -1203,7 +1206,9 @@
   const fileQueue = succeededConvos.flatMap((d) => d.fileRefs.map((ref) => ({ d, ref })));
   let filesDone = 0;
   if (fileQueue.length) {
-    ui.log(`Starting file pass: ${fileQueue.length} files across ${succeededConvos.filter((d) => d.fileRefs.length).length} conversations`);
+    const byType = {};
+    for (const { ref } of fileQueue) byType[ref.type] = (byType[ref.type] || 0) + 1;
+    ui.log(`Starting file pass: ${fileQueue.length} files across ${succeededConvos.filter((d) => d.fileRefs.length).length} conversations (${Object.entries(byType).map(([t, n]) => `${n} ${t}`).join(", ")})`);
     ui.set(`Downloading files: 0 of ${fileQueue.length}`, 0, "");
     stats.phase = "files";
     stats.phaseDone = 0;
@@ -1214,21 +1219,23 @@
       Array.from({ length: Math.min(CONCURRENCY, fileQueue.length) }, async (_, w) => {
         while (nextFile < fileQueue.length) {
           const { d, ref } = fileQueue[nextFile++];
-          ui.worker(w, `file ${filesDone + 1}/${fileQueue.length}`, "green");
+          const shortName = (ref.filename || ref.fileId).slice(0, 32);
+          ui.worker(w, `${shortName}`, "green");
           try {
             const { data } = await downloadFile(ref.fileId, ref.filename);
             // stored under the name pass 1 already linked in markdown/HTML
             zipEntries.push({ path: `files/${d.fname}/${ref.zipName}`, data });
+            ui.workerLog(w, `ok ${ref.filename || ref.fileId} in "${d.title.slice(0, 40)}"`);
           } catch (e) {
             failedFiles++;
             delete d.fileMap[ref.fileId]; // dead link -> render as plain [image]/no link in HTML pass
-            ui.workerLog(w, `file ${ref.fileId} failed (${e.message}) in "${d.title.slice(0, 40)}"`);
+            ui.workerLog(w, `file ${ref.filename || ref.fileId} failed (${e.message}) in "${d.title.slice(0, 40)}"`);
           }
           filesDone++;
           stats.phaseDone = filesDone;
           stats.phaseRecent.push(Date.now());
           if (stats.phaseRecent.length > 20) stats.phaseRecent.shift();
-          ui.set(`Downloading files: ${filesDone} of ${fileQueue.length}`, Math.round((filesDone / fileQueue.length) * 100), d.title);
+          ui.set(`Downloading files: ${filesDone} of ${fileQueue.length}`, Math.round((filesDone / fileQueue.length) * 100), `${ref.filename || ref.fileId} - ${d.title}`);
         }
         ui.worker(w, "idle", "gray");
       })
