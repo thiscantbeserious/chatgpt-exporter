@@ -48,7 +48,7 @@ globalThis.document = {
   addEventListener: () => {},
   activeElement: null,
 };
-globalThis.window = { innerHeight: 900, fetch: (...a) => globalThis.fetch(...a), dispatchEvent: () => {} };
+globalThis.window = { innerHeight: 900, fetch: (...a) => globalThis.fetch(...a), dispatchEvent: () => {}, addEventListener: () => {} };
 globalThis.history = { pushState: () => {} };
 globalThis.location = { pathname: "/", search: "" };
 globalThis.PopStateEvent = class {};
